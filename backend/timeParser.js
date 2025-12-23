@@ -146,7 +146,7 @@ function parseSendCommand(text) {
 
   // Try to find " in " or " at " keyword which separates name from time
   let separatorIndex = -1;
-  let separatorLength = 0;
+  let separatorKeyword = '';
 
   const inIndex = content.toLowerCase().indexOf(' in ');
   const atIndex = content.toLowerCase().indexOf(' at ');
@@ -154,10 +154,10 @@ function parseSendCommand(text) {
   // Find which separator comes first (and exists)
   if (inIndex !== -1 && (atIndex === -1 || inIndex < atIndex)) {
     separatorIndex = inIndex;
-    separatorLength = 4; // length of " in "
+    separatorKeyword = 'in';
   } else if (atIndex !== -1) {
     separatorIndex = atIndex;
-    separatorLength = 4; // length of " at "
+    separatorKeyword = 'at';
   }
 
   if (separatorIndex === -1) {
@@ -171,8 +171,15 @@ function parseSendCommand(text) {
     return null;
   }
 
-  // Extract time and message part (everything after " in " or " at ")
-  const timeAndMessage = content.substring(separatorIndex + separatorLength).trim();
+  // Extract time and message part
+  // For "at", keep the "at" prefix (chrono needs it to parse "at 8")
+  // For "in", strip it (chrono doesn't need it)
+  let timeAndMessage;
+  if (separatorKeyword === 'at') {
+    timeAndMessage = content.substring(separatorIndex + 1).trim(); // +1 to skip the space before "at"
+  } else {
+    timeAndMessage = content.substring(separatorIndex + 4).trim(); // +4 to skip " in "
+  }
 
   // Parse the time using chrono
   const parsed = chrono.parse(timeAndMessage, new Date(), { forwardDate: true });
@@ -192,9 +199,10 @@ function parseSendCommand(text) {
   // Get the parsed date in local time (which chrono gives us in system timezone)
   let parsedDate = match.start.date();
 
-  // Determine if this is a relative time (in X minutes/hours) or absolute time (at X, tomorrow at X)
-  const isRelativeTime = /\bin\s+\d+/.test(timeString.toLowerCase()) ||
-                         /\bafter\s+\d+/.test(timeString.toLowerCase());
+  // Determine if this is a relative time or absolute time
+  // If user used "in" keyword, it's relative (in 2 hours, in 30 minutes)
+  // If user used "at" keyword, it's absolute (at 8, at 8:30)
+  const isRelativeTime = separatorKeyword === 'in';
 
   let scheduledTime;
 
