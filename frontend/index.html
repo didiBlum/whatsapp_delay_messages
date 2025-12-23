@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WhatsApp Scheduler</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>📱 WhatsApp Scheduler</h1>
+      <div class="status-bar">
+        <span id="status-indicator" class="status disconnected">●</span>
+        <span id="status-text">Disconnected</span>
+      </div>
+    </header>
+
+    <main>
+      <!-- Connection Section -->
+      <section class="card" id="connection-section">
+        <h2>📲 Connect WhatsApp</h2>
+        <div id="qr-container">
+          <div id="qr-loading" class="loading">
+            <p>Initializing WhatsApp client...</p>
+          </div>
+          <div id="qr-code" style="display: none;">
+            <p>Scan this QR code with WhatsApp:</p>
+            <img id="qr-image" alt="QR Code">
+          </div>
+          <div id="qr-connected" style="display: none;">
+            <div class="success-message">
+              <span class="icon">✅</span>
+              <p>WhatsApp Connected!</p>
+              <button id="disconnect-btn" class="btn btn-danger">🔌 Disconnect & Generate New QR</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Instructions Section -->
+      <section class="card">
+        <h2>📝 How to Use</h2>
+        <ol class="instructions">
+          <li>Forward a message from someone to yourself (or your bot chat)</li>
+          <li>Send a command: <code>/reply &lt;time&gt; &lt;message&gt;</code></li>
+          <li>Examples:
+            <ul>
+              <li><code>/reply tomorrow at 9 Good morning!</code></li>
+              <li><code>/reply in 2 hours Don't forget the meeting</code></li>
+              <li><code>/reply next Monday at 14:00 Weekly reminder</code></li>
+            </ul>
+          </li>
+          <li>The system will send your message at the scheduled time</li>
+        </ol>
+      </section>
+
+      <!-- Statistics Section -->
+      <section class="card">
+        <h2>📊 Statistics</h2>
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-value" id="stat-total">0</div>
+            <div class="stat-label">Total</div>
+          </div>
+          <div class="stat-card pending">
+            <div class="stat-value" id="stat-pending">0</div>
+            <div class="stat-label">Pending</div>
+          </div>
+          <div class="stat-card sent">
+            <div class="stat-value" id="stat-sent">0</div>
+            <div class="stat-label">Sent</div>
+          </div>
+          <div class="stat-card failed">
+            <div class="stat-value" id="stat-failed">0</div>
+            <div class="stat-label">Failed</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Scheduled Messages Section -->
+      <section class="card">
+        <h2>📬 Scheduled Messages</h2>
+        <div class="table-controls">
+          <button id="refresh-btn" class="btn btn-primary">🔄 Refresh</button>
+        </div>
+        <div id="messages-container">
+          <div id="messages-loading" class="loading">
+            <p>Loading messages...</p>
+          </div>
+          <div id="messages-table" style="display: none;"></div>
+          <div id="messages-empty" style="display: none;">
+            <p class="empty-state">No scheduled messages yet. Send a /reply command to get started!</p>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <p>Israel Timezone (UTC+2/+3 with DST) • Auto-refreshes every 30 seconds</p>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
