@@ -63,7 +63,7 @@ function getPendingMessages() {
     const now = new Date().toISOString();
     db.all(
       `SELECT * FROM scheduled_messages
-       WHERE status = 'pending' AND scheduled_time <= ?
+       WHERE status = 'pending' AND datetime(scheduled_time) <= datetime(?)
        ORDER BY scheduled_time ASC`,
       [now],
       (err, rows) => {
