@@ -322,6 +322,11 @@ tbody tr td strong {
   color: #7f1d1d;
 }
 
+.status-badge.status-cancelled {
+  background: linear-gradient(135deg, #cbd5e0 0%, #a0aec0 100%);
+  color: #1a202c;
+}
+
 /* Empty State */
 .empty-state {
   text-align: center;

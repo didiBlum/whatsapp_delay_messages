@@ -690,9 +690,73 @@ async function handleIncomingMessage(message) {
       return;
     }
 
+    // Check if this is a /show command
+    if (messageBody && messageBody.toLowerCase().trim() === '/show') {
+      console.log('Processing /show command');
+
+      try {
+        const { getPendingMessages } = require('./database');
+        const messages = await getPendingMessages();
+
+        if (messages.length === 0) {
+          await sendMessageToSelf('📭 *No scheduled messages*\n\nYou have no pending messages to send.');
+          return;
+        }
+
+        let showMessage = `📬 *Scheduled Messages* (${messages.length})\n\n`;
+        messages.forEach((msg, index) => {
+          const scheduledDate = new Date(msg.scheduled_time);
+          const formattedTime = formatIsraelTime(scheduledDate);
+
+          showMessage += `*${index + 1}. ID: ${msg.id}*\n`;
+          showMessage += `📧 To: ${msg.recipient_name || msg.recipient}\n`;
+          showMessage += `💬 Message: "${msg.message.substring(0, 50)}${msg.message.length > 50 ? '...' : ''}"\n`;
+          showMessage += `⏰ Time: ${formattedTime}\n`;
+          showMessage += `\n`;
+        });
+
+        showMessage += `\n💡 To cancel: /cancel [id]`;
+
+        await sendMessageToSelf(showMessage);
+        console.log('📤 Sent scheduled messages list to user');
+        return;
+      } catch (err) {
+        console.error('❌ Error fetching scheduled messages:', err);
+        await sendMessageToSelf('❌ Error fetching scheduled messages. Please try again.');
+        return;
+      }
+    }
+
+    // Check if this is a /cancel command
+    if (messageBody && messageBody.toLowerCase().startsWith('/cancel')) {
+      console.log('Processing /cancel command');
+
+      const cancelMatch = messageBody.match(/^\/cancel\s+(\d+)$/i);
+      if (!cancelMatch) {
+        await sendMessageToSelf('❌ Invalid format.\n\nUsage: `/cancel [id]`\n\nExample: /cancel 5\n\nUse /show to see message IDs.');
+        return;
+      }
+
+      const messageId = parseInt(cancelMatch[1]);
+      console.log('Cancelling message ID:', messageId);
+
+      try {
+        const { updateMessageStatus } = require('./database');
+        await updateMessageStatus(messageId, 'cancelled', 'Cancelled by user');
+
+        await sendMessageToSelf(`✅ *Message ${messageId} cancelled*\n\nThe scheduled message has been cancelled and will not be sent.\n\nUse /show to see remaining messages.`);
+        console.log('✅ Message cancelled successfully');
+        return;
+      } catch (err) {
+        console.error('❌ Error cancelling message:', err);
+        await sendMessageToSelf(`❌ Error cancelling message ${messageId}. Please make sure the ID is correct.\n\nUse /show to see valid IDs.`);
+        return;
+      }
+    }
+
     // Check if this is a /reply command
     if (!messageBody || !messageBody.toLowerCase().startsWith('/reply')) {
-      console.log('ℹ️  Message is not a /send, /reply, or /list command, ignoring:', messageBody ? messageBody.substring(0, 50) : '[no body]');
+      console.log('ℹ️  Message is not a /send, /reply, /list, /show, or /cancel command, ignoring:', messageBody ? messageBody.substring(0, 50) : '[no body]');
       return;
     }
 
