@@ -1,7 +1,8 @@
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 
-const dbPath = path.join(__dirname, 'scheduled.db');
+// Use DATABASE_PATH env var if set (for Railway volumes), otherwise use local path
+const dbPath = process.env.DATABASE_PATH || path.join(__dirname, 'scheduled.db');
 const db = new sqlite3.Database(dbPath);
 
 // Initialize database schema

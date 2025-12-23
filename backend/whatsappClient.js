@@ -17,9 +17,11 @@ const eventHandlers = {
   onDisconnected: null
 };
 
+// Session path - use SESSION_PATH env var if set (for Railway volumes), otherwise use local path
+const sessionPath = process.env.SESSION_PATH || path.join(__dirname, 'whatsapp-session');
+
 // Function to clear session data
 function clearSession() {
-  const sessionPath = path.join(__dirname, 'whatsapp-session');
   try {
     if (fs.existsSync(sessionPath)) {
       fs.rmSync(sessionPath, { recursive: true, force: true });
@@ -44,10 +46,11 @@ function initializeClient() {
   qrCodeData = null; // Reset QR code
 
   console.log('Creating WhatsApp client with Puppeteer...');
-  
+  console.log('Session path:', sessionPath);
+
   client = new Client({
     authStrategy: new LocalAuth({
-      dataPath: './whatsapp-session'
+      dataPath: sessionPath
     }),
     puppeteer: {
       headless: true,
