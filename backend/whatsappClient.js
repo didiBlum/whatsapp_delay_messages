@@ -406,6 +406,47 @@ async function sendMessageToSelf(message) {
   }
 }
 
+// Send a list message (dropdown style) to self
+async function sendListToSelf(body, buttonText, sections) {
+  if (!client || !isReady) {
+    throw new Error('WhatsApp client is not ready');
+  }
+
+  try {
+    const { MessageMedia, Buttons, List } = require('whatsapp-web.js');
+    const chatId = `${userPhoneNumber}@c.us`;
+
+    const list = new List(body, buttonText, sections, body);
+    await client.sendMessage(chatId, list);
+    console.log('List message sent to self');
+    return true;
+  } catch (error) {
+    console.error('Error sending list to self:', error);
+    // Fallback to regular message if lists not supported
+    throw error;
+  }
+}
+
+// Send a message with buttons to self
+async function sendButtonsToSelf(body, buttons) {
+  if (!client || !isReady) {
+    throw new Error('WhatsApp client is not ready');
+  }
+
+  try {
+    const { Buttons } = require('whatsapp-web.js');
+    const chatId = `${userPhoneNumber}@c.us`;
+
+    const buttonMessage = new Buttons(body, buttons, body);
+    await client.sendMessage(chatId, buttonMessage);
+    console.log('Button message sent to self');
+    return true;
+  } catch (error) {
+    console.error('Error sending buttons to self:', error);
+    throw error;
+  }
+}
+
 function onMessage(handler) {
   eventHandlers.onMessage = handler;
 }
@@ -473,6 +514,8 @@ module.exports = {
   isClientReady,
   sendMessage,
   sendMessageToSelf,
+  sendListToSelf,
+  sendButtonsToSelf,
   getUserPhoneNumber,
   onMessage,
   onReady,

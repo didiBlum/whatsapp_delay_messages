@@ -1,6 +1,6 @@
 const { parseTimeCommand, parseSendCommand, formatIsraelTime } = require('./timeParser');
 const { saveScheduledMessage } = require('./database');
-const { sendMessageToSelf, getUserPhoneNumber } = require('./whatsappClient');
+const { sendMessageToSelf, sendListToSelf, sendButtonsToSelf, getUserPhoneNumber } = require('./whatsappClient');
 
 // Store the last forwarded message per chat to track context
 const lastForwardedMessage = new Map();
@@ -502,28 +502,63 @@ async function handleIncomingMessage(message) {
           await sendMessageToSelf(`✅ Found original sender: *${match.contactName}*\n\nNow send:\n/reply in [time] [message]\n\nExample: /reply in 2 hours hey there!`);
           return;
         } else {
-          // Multiple matches - ask user to choose
+          // Multiple matches - ask user to choose using a list
           console.log('❓ Multiple potential senders found, asking user to choose');
 
-          let choiceMessage = `❓ Found ${matches.length} people who sent this message:\n\n`;
-          matches.forEach((match, index) => {
-            choiceMessage += `${index + 1}. ${match.contactName}\n`;
-          });
-          choiceMessage += `\nReply with the number of who you want to reply to, then use:\n/reply in [time] [message]`;
+          try {
+            // Create list items from matches
+            const rows = matches.map((match, index) => ({
+              id: `sender_${index}`,
+              title: match.contactName,
+              description: `Sent at ${new Date(match.timestamp).toLocaleTimeString()}`
+            }));
 
-          // Store all matches for selection
-          lastForwardedMessage.set(chat.id._serialized, {
-            timestamp: message.timestamp,
-            from: message.from,
-            forwardingScore: message.forwardingScore,
-            message: message,
-            searchedForOriginal: true,
-            foundMatches: matches.length,
-            matchOptions: matches
-          });
+            const sections = [
+              {
+                title: 'Select Original Sender',
+                rows: rows
+              }
+            ];
 
-          await sendMessageToSelf(choiceMessage);
-          return;
+            // Store all matches for selection
+            lastForwardedMessage.set(chat.id._serialized, {
+              timestamp: message.timestamp,
+              from: message.from,
+              forwardingScore: message.forwardingScore,
+              message: message,
+              searchedForOriginal: true,
+              foundMatches: matches.length,
+              matchOptions: matches
+            });
+
+            await sendListToSelf(
+              `📋 Found ${matches.length} people who sent this message.\n\nSelect who you want to reply to:`,
+              'Choose Sender',
+              sections
+            );
+            return;
+          } catch (listError) {
+            console.error('Failed to send list, falling back to numbered menu:', listError);
+            // Fallback to old numbered menu
+            let choiceMessage = `❓ Found ${matches.length} people who sent this message:\n\n`;
+            matches.forEach((match, index) => {
+              choiceMessage += `${index + 1}. ${match.contactName}\n`;
+            });
+            choiceMessage += `\nReply with the number of who you want to reply to, then use:\n/reply in [time] [message]`;
+
+            lastForwardedMessage.set(chat.id._serialized, {
+              timestamp: message.timestamp,
+              from: message.from,
+              forwardingScore: message.forwardingScore,
+              message: message,
+              searchedForOriginal: true,
+              foundMatches: matches.length,
+              matchOptions: matches
+            });
+
+            await sendMessageToSelf(choiceMessage);
+            return;
+          }
         }
       } catch (err) {
         console.error('Error searching for original sender:', err);
@@ -539,11 +574,22 @@ async function handleIncomingMessage(message) {
       }
     }
 
-    // Check if user is responding with a number to select from multiple forwarded message matches
+    // Check if user is responding with a number or list ID to select from multiple forwarded message matches
     const forwardedContext = lastForwardedMessage.get(chat.id._serialized);
-    if (forwardedContext && forwardedContext.matchOptions && /^\d+$/.test(messageBody.trim())) {
-      const selection = parseInt(messageBody.trim()) - 1;
-      console.log('User selecting from multiple matches, index:', selection);
+    if (forwardedContext && forwardedContext.matchOptions) {
+      let selection = -1;
+
+      // Check if it's a list ID (sender_X)
+      const listIdMatch = messageBody.trim().match(/^sender_(\d+)$/);
+      if (listIdMatch) {
+        selection = parseInt(listIdMatch[1]);
+        console.log('User selected from list, index:', selection);
+      }
+      // Check if it's a plain number
+      else if (/^\d+$/.test(messageBody.trim())) {
+        selection = parseInt(messageBody.trim()) - 1;
+        console.log('User selected by number, index:', selection);
+      }
 
       if (selection >= 0 && selection < forwardedContext.matchOptions.length) {
         const selectedMatch = forwardedContext.matchOptions[selection];
@@ -562,7 +608,7 @@ async function handleIncomingMessage(message) {
 
         await sendMessageToSelf(`✅ Selected: *${selectedMatch.contactName}*\n\nNow send:\n/reply in [time] [message]\n\nExample: /reply in 2 hours hey there!`);
         return;
-      } else {
+      } else if (selection !== -1) {
         await sendMessageToSelf(`❌ Invalid selection: ${messageBody}\n\nPlease choose a number between 1 and ${forwardedContext.matchOptions.length}`);
         return;
       }
@@ -570,9 +616,20 @@ async function handleIncomingMessage(message) {
 
     // Check if user is responding to a /send contact selection
     const sendContext = pendingSendContext.get(chat.id._serialized);
-    if (sendContext && /^\d+$/.test(messageBody.trim())) {
-      const selection = parseInt(messageBody.trim()) - 1;
-      console.log('User selecting contact for /send command, index:', selection);
+    if (sendContext) {
+      let selection = -1;
+
+      // Check if it's a list ID (contact_X)
+      const listIdMatch = messageBody.trim().match(/^contact_(\d+)$/);
+      if (listIdMatch) {
+        selection = parseInt(listIdMatch[1]);
+        console.log('User selected contact from list, index:', selection);
+      }
+      // Check if it's a plain number
+      else if (/^\d+$/.test(messageBody.trim())) {
+        selection = parseInt(messageBody.trim()) - 1;
+        console.log('User selected contact by number, index:', selection);
+      }
 
       if (selection >= 0 && selection < sendContext.matches.length) {
         const selectedContact = sendContext.matches[selection];
@@ -604,7 +661,7 @@ async function handleIncomingMessage(message) {
           await sendMessageToSelf('❌ Error scheduling message. Please try again.');
         }
         return;
-      } else {
+      } else if (selection !== -1) {
         await sendMessageToSelf(`❌ Invalid selection. Please choose a number between 1 and ${sendContext.matches.length}`);
         return;
       }
@@ -666,24 +723,55 @@ async function handleIncomingMessage(message) {
         }
         return;
       } else {
-        // Multiple matches - ask user to choose
+        // Multiple matches - ask user to choose using a list
         console.log('❓ Multiple matches found, asking user to choose');
 
-        let choiceMessage = `❓ Found ${matches.length} contacts matching "*${parsed.recipientName}*":\n\n`;
-        matches.forEach((contact, index) => {
-          choiceMessage += `${index + 1}. ${contact.name}\n`;
-        });
-        choiceMessage += `\nReply with the number to schedule the message.`;
+        try {
+          // Create list items from matches
+          const rows = matches.map((contact, index) => ({
+            id: `contact_${index}`,
+            title: contact.name,
+            description: contact.number
+          }));
 
-        // Store context for selection
-        pendingSendContext.set(chat.id._serialized, {
-          matches: matches,
-          scheduledTime: parsed.scheduledTime,
-          message: parsed.message
-        });
+          const sections = [
+            {
+              title: 'Select Contact',
+              rows: rows
+            }
+          ];
 
-        await sendMessageToSelf(choiceMessage);
-        return;
+          // Store context for selection
+          pendingSendContext.set(chat.id._serialized, {
+            matches: matches,
+            scheduledTime: parsed.scheduledTime,
+            message: parsed.message
+          });
+
+          await sendListToSelf(
+            `📋 Found ${matches.length} contacts matching "*${parsed.recipientName}*"\n\nSelect the contact to send to:`,
+            'Choose Contact',
+            sections
+          );
+          return;
+        } catch (listError) {
+          console.error('Failed to send list, falling back to numbered menu:', listError);
+          // Fallback to old numbered menu
+          let choiceMessage = `❓ Found ${matches.length} contacts matching "*${parsed.recipientName}*":\n\n`;
+          matches.forEach((contact, index) => {
+            choiceMessage += `${index + 1}. ${contact.name}\n`;
+          });
+          choiceMessage += `\nReply with the number to schedule the message.`;
+
+          pendingSendContext.set(chat.id._serialized, {
+            matches: matches,
+            scheduledTime: parsed.scheduledTime,
+            message: parsed.message
+          });
+
+          await sendMessageToSelf(choiceMessage);
+          return;
+        }
       }
     }
 
@@ -699,14 +787,16 @@ async function handleIncomingMessage(message) {
         return;
       }
 
-      // Build contacts list message
+      // Build contacts list message with better formatting
       let listMessage = '📋 *Recent Contacts*\n\n';
-      listMessage += 'To schedule a reply, use:\n';
-      listMessage += '`/reply [number] in [time] [message]`\n\n';
       contacts.forEach((contact, index) => {
-        listMessage += `${index + 1}. ${contact.name}\n`;
+        listMessage += `*${index + 1}.* ${contact.name}\n`;
+        listMessage += `   📞 ${contact.number}\n\n`;
       });
-      listMessage += `\n💡 Example: /reply 1 in 2 hours hey there!`;
+      listMessage += `💡 *How to use:*\n`;
+      listMessage += `• /reply [number] in [time] [message]\n`;
+      listMessage += `• /send [name] in [time] [message]\n\n`;
+      listMessage += `📝 Example: /reply 1 in 2 hours hey there!`;
 
       await sendMessageToSelf(listMessage);
       console.log('📤 Sent contacts list to user');
@@ -731,14 +821,17 @@ async function handleIncomingMessage(message) {
           const scheduledDate = new Date(msg.scheduled_time);
           const formattedTime = formatIsraelTime(scheduledDate);
 
-          showMessage += `*${index + 1}. ID: ${msg.id}*\n`;
-          showMessage += `📧 To: ${msg.recipient_name || msg.recipient}\n`;
-          showMessage += `💬 Message: "${msg.message.substring(0, 50)}${msg.message.length > 50 ? '...' : ''}"\n`;
-          showMessage += `⏰ Time: ${formattedTime}\n`;
+          showMessage += `━━━━━━━━━━━━━━━━━━━━\n`;
+          showMessage += `*ID: ${msg.id}*\n\n`;
+          showMessage += `👤 *To:* ${msg.recipient_name || msg.recipient}\n`;
+          showMessage += `💬 *Message:*\n"${msg.message.substring(0, 100)}${msg.message.length > 100 ? '...' : ''}"\n\n`;
+          showMessage += `⏰ *Scheduled:* ${formattedTime}\n`;
           showMessage += `\n`;
         });
 
-        showMessage += `\n💡 To cancel: /cancel [id]`;
+        showMessage += `━━━━━━━━━━━━━━━━━━━━\n\n`;
+        showMessage += `💡 *To cancel:* /cancel [id]\n`;
+        showMessage += `📝 *Example:* /cancel ${messages[0].id}`;
 
         await sendMessageToSelf(showMessage);
         console.log('📤 Sent scheduled messages list to user');
