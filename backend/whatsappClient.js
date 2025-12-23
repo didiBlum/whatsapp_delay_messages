@@ -18,7 +18,10 @@ const eventHandlers = {
 };
 
 // Session path - use SESSION_PATH env var if set (for Railway volumes), otherwise use local path
+// For Railway: Set SESSION_PATH=/data/whatsapp-session in environment variables
 const sessionPath = process.env.SESSION_PATH || path.join(__dirname, 'whatsapp-session');
+console.log('📁 Session path configured:', sessionPath);
+console.log('📁 SESSION_PATH env var:', process.env.SESSION_PATH || 'not set (using default)');
 
 // Function to clear session data
 function clearSession() {
@@ -60,7 +63,24 @@ function initializeClient() {
         '--disable-dev-shm-usage',
         '--disable-accelerated-2d-canvas',
         '--no-first-run',
-        '--disable-gpu'
+        '--disable-gpu',
+        '--disable-software-rasterizer',
+        '--disable-extensions',
+        '--disable-background-networking',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-breakpad',
+        '--disable-component-extensions-with-background-pages',
+        '--disable-features=TranslateUI',
+        '--disable-ipc-flooding-protection',
+        '--disable-renderer-backgrounding',
+        '--disable-sync',
+        '--force-color-profile=srgb',
+        '--metrics-recording-only',
+        '--mute-audio',
+        '--hide-scrollbars',
+        '--enable-features=NetworkService,NetworkServiceInProcess',
+        '--window-size=1920,1080'
       ]
     }
   });
@@ -71,9 +91,22 @@ function initializeClient() {
     console.log(`📱 Loading: ${percent}% - ${message}`);
   });
 
-  // Authenticated event
+  // Authenticated event - fires after QR code is scanned
   client.on('authenticated', () => {
-    console.log('✅ WhatsApp authenticated');
+    console.log('✅✅✅ WhatsApp authenticated - QR code scanned successfully!');
+    console.log('💾 Session will be saved to:', sessionPath);
+    
+    // Verify session directory exists
+    try {
+      if (!fs.existsSync(sessionPath)) {
+        fs.mkdirSync(sessionPath, { recursive: true });
+        console.log('✅ Created session directory');
+      }
+      console.log('✅ Session directory exists and is accessible');
+    } catch (err) {
+      console.error('❌ ERROR: Cannot access session directory:', err.message);
+      console.error('   This will prevent session from being saved!');
+    }
   });
 
   // QR code event
@@ -89,6 +122,7 @@ function initializeClient() {
   // Ready event
   client.on('ready', async () => {
     console.log('WhatsApp client is ready!');
+    console.log('💾 Session saved to:', sessionPath);
     isReady = true;
     isInitializing = false;
     qrCodeData = null;
@@ -98,6 +132,22 @@ function initializeClient() {
     if (info && info.wid) {
       userPhoneNumber = info.wid.user;
       console.log('User phone number:', userPhoneNumber);
+    }
+    
+    // Verify session directory exists and is writable
+    try {
+      if (!fs.existsSync(sessionPath)) {
+        fs.mkdirSync(sessionPath, { recursive: true });
+        console.log('✅ Created session directory:', sessionPath);
+      }
+      // Test write permissions
+      const testFile = path.join(sessionPath, '.test-write');
+      fs.writeFileSync(testFile, 'test');
+      fs.unlinkSync(testFile);
+      console.log('✅ Session directory is writable');
+    } catch (err) {
+      console.error('❌ Session directory error:', err.message);
+      console.error('   Path:', sessionPath);
     }
     
     console.log('');
@@ -220,6 +270,17 @@ function initializeClient() {
   // Change state event (shows connection progress)
   client.on('change_state', (state) => {
     console.log(`🔄 State changed to: ${state}`);
+    
+    // Log important state transitions
+    if (state === 'CONNECTING') {
+      console.log('📡 Connecting to WhatsApp...');
+    } else if (state === 'OPENING') {
+      console.log('🔓 Opening WhatsApp Web...');
+    } else if (state === 'PAIRING') {
+      console.log('🔗 Pairing with phone...');
+    } else if (state === 'UNPAIRED' || state === 'UNPAIRED_IDLE') {
+      console.log('⚠️  Unpaired - QR code will be generated');
+    }
   });
 
   // Auth failure

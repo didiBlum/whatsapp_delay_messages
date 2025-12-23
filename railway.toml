@@ -13,3 +13,7 @@ healthcheckTimeout = 300
 [[deploy.volumes]]
 name = "data"
 mountPath = "/data"
+
+# Environment variables (set these in Railway dashboard)
+# SESSION_PATH=/data/whatsapp-session
+# PORT=3000 (Railway sets this automatically)

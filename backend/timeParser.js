@@ -27,10 +27,12 @@ function getIsraelTimezoneOffset(date) {
   }
 }
 
-function convertToIsraelTime(utcDate) {
-  const offset = getIsraelTimezoneOffset(utcDate);
-  const israelTime = new Date(utcDate.getTime() + offset * 60 * 1000);
-  return israelTime;
+function convertFromIsraelTimeToUTC(israelLocalTime) {
+  // Given a "naive" time that represents Israel local time,
+  // convert it to UTC by subtracting the Israel offset
+  const offset = getIsraelTimezoneOffset(israelLocalTime);
+  const utcTime = new Date(israelLocalTime.getTime() - offset * 60 * 1000);
+  return utcTime;
 }
 
 function parseTimeCommand(text) {
@@ -88,15 +90,15 @@ function parseTimeCommand(text) {
 
   if (isRelativeTime) {
     // For relative times (in 1 minute, in 2 hours), use the date as-is from current time
-    // chrono already calculated this from now, so just use it directly
+    // chrono already calculated this from now, so just use it directly in UTC
     scheduledTime = parsedDate;
-    console.log('⏱️  Relative time detected - scheduling from now');
+    console.log('⏱️  Relative time detected - scheduling from now:', scheduledTime.toISOString());
   } else {
     // For absolute times (at 8, tomorrow at 9), interpret as Israel time
-    // Convert from system time to UTC, then to Israel time
-    const utcDate = new Date(parsedDate.getTime() - parsedDate.getTimezoneOffset() * 60 * 1000);
-    scheduledTime = convertToIsraelTime(utcDate);
-    console.log('🕐 Absolute time detected - using Israel timezone');
+    // chrono gives us the time in system timezone, but we want to treat it as Israel time
+    // So we need to convert: treat parsedDate as Israel local time → convert to UTC
+    scheduledTime = convertFromIsraelTimeToUTC(parsedDate);
+    console.log('🕐 Absolute time detected - Israel time converted to UTC:', scheduledTime.toISOString());
   }
 
   return {
@@ -183,12 +185,13 @@ function parseSendCommand(text) {
   if (isRelativeTime) {
     // For relative times (in 1 minute, in 2 hours), use the date as-is from current time
     scheduledTime = parsedDate;
-    console.log('⏱️  Relative time detected - scheduling from now');
+    console.log('⏱️  Relative time detected - scheduling from now:', scheduledTime.toISOString());
   } else {
     // For absolute times (at 8, tomorrow at 9), interpret as Israel time
-    const utcDate = new Date(parsedDate.getTime() - parsedDate.getTimezoneOffset() * 60 * 1000);
-    scheduledTime = convertToIsraelTime(utcDate);
-    console.log('🕐 Absolute time detected - using Israel timezone');
+    // chrono gives us the time in system timezone, but we want to treat it as Israel time
+    // So we need to convert: treat parsedDate as Israel local time → convert to UTC
+    scheduledTime = convertFromIsraelTimeToUTC(parsedDate);
+    console.log('🕐 Absolute time detected - Israel time converted to UTC:', scheduledTime.toISOString());
   }
 
   return {
@@ -204,6 +207,6 @@ module.exports = {
   parseTimeCommand,
   parseSendCommand,
   formatIsraelTime,
-  convertToIsraelTime,
+  convertFromIsraelTimeToUTC,
   getIsraelTimezoneOffset
 };

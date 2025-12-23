@@ -35,12 +35,17 @@ function initDatabase() {
 // Save a scheduled message
 function saveScheduledMessage(recipient, recipientName, message, scheduledTime) {
   return new Promise((resolve, reject) => {
+    // Always convert to ISO string for consistent storage and comparison
+    const scheduledTimeISO = scheduledTime instanceof Date
+      ? scheduledTime.toISOString()
+      : new Date(scheduledTime).toISOString();
+
     const stmt = db.prepare(`
       INSERT INTO scheduled_messages (recipient, recipient_name, message, scheduled_time)
       VALUES (?, ?, ?, ?)
     `);
 
-    stmt.run(recipient, recipientName, message, scheduledTime, function(err) {
+    stmt.run(recipient, recipientName, message, scheduledTimeISO, function(err) {
       if (err) {
         reject(err);
       } else {
