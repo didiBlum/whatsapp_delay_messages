@@ -25,14 +25,41 @@ railway up
 
 **⚠️ Without a volume, your database and WhatsApp session will be deleted on every deployment!**
 
-1. Go to your Railway project dashboard
-2. Click on your service
-3. Go to **"Settings"** tab
-4. Scroll to **"Volumes"** section
-5. Click **"Add Volume"**
-6. Configure:
-   - **Mount Path:** `/data`
-   - Click **"Add"**
+#### Option A: Config-as-Code (Recommended - Already Done!)
+
+The volume is already configured in `railway.toml`:
+```toml
+[[deploy.volumes]]
+name = "data"
+mountPath = "/data"
+```
+
+Just deploy and Railway will create the volume automatically! ✅
+
+#### Option B: Manual UI Setup (if config doesn't work)
+
+**Finding the Storage Tab (Railway's UI keeps changing):**
+
+Try these locations:
+1. **New UI (2024+):**
+   - Project → Select your service
+   - Look for tabs at top: Overview, **Volumes**, Metrics, Settings, Variables
+   - Click **"Volumes"** tab
+   - Click **"New Volume"**
+
+2. **Alternative location:**
+   - Project → Service → **Settings** tab
+   - Scroll down to **"Storage"** or **"Volumes"** section
+   - Click **"Add Volume"** or **"+ New Volume"**
+
+3. **If still not visible:**
+   - Click your service name
+   - Look for **"+ New"** button in top right
+   - Select **"Volume"** from dropdown
+
+Configure:
+- **Mount Path:** `/data`
+- Click **"Add"** or **"Create"**
 
 ### 3. Set Environment Variables
 
