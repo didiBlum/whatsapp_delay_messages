@@ -14,7 +14,7 @@ const pendingSendContext = new Map(); // Map of chatId -> { matches, scheduledTi
 // Cache all incoming messages for a day to quickly find original senders when forwarding
 // Structure: Map of message body -> array of { senderId, senderName, chatName, timestamp }
 const incomingMessageCache = new Map();
-const MESSAGE_CACHE_DURATION = 24 * 60 * 60 * 1000; // 1 day in milliseconds (TTL not yet implemented)
+const MESSAGE_CACHE_DURATION = 24 * 60 * 60 * 1000; // 1 day in milliseconds
 
 // Store incoming message in cache
 function cacheIncomingMessage(messageBody, senderId, senderName, chatName, timestamp) {
@@ -46,30 +46,51 @@ function searchCachedMessages(messageBody) {
     return [];
   }
 
-  // TODO: Filter by TTL when implemented
-  // const now = Date.now();
-  // const cutoff = now - MESSAGE_CACHE_DURATION;
-  // const recent = matches.filter(m => m.timestamp > cutoff);
+  // Filter by TTL - only return messages within the cache duration
+  const now = Date.now();
+  const cutoff = now - MESSAGE_CACHE_DURATION;
+  const recentMatches = matches.filter(m => m.timestamp > cutoff);
 
-  console.log(`🔍 Found ${matches.length} cached sender(s) for this message`);
-  return matches;
+  if (recentMatches.length < matches.length) {
+    console.log(`🗑️  Filtered out ${matches.length - recentMatches.length} expired cache entries`);
+  }
+
+  console.log(`🔍 Found ${recentMatches.length} recent cached sender(s) for this message`);
+  return recentMatches;
 }
 
-// Cleanup function for TTL (not yet active)
-// function cleanupMessageCache() {
-//   const now = Date.now();
-//   const cutoff = now - MESSAGE_CACHE_DURATION;
-//
-//   for (const [messageBody, senders] of incomingMessageCache.entries()) {
-//     const recentSenders = senders.filter(s => s.timestamp > cutoff);
-//
-//     if (recentSenders.length === 0) {
-//       incomingMessageCache.delete(messageBody);
-//     } else {
-//       incomingMessageCache.set(messageBody, recentSenders);
-//     }
-//   }
-// }
+// Cleanup function to remove expired messages from cache
+function cleanupMessageCache() {
+  const now = Date.now();
+  const cutoff = now - MESSAGE_CACHE_DURATION;
+
+  let removedMessages = 0;
+  let removedEntries = 0;
+
+  for (const [messageBody, senders] of incomingMessageCache.entries()) {
+    const recentSenders = senders.filter(s => s.timestamp > cutoff);
+    const expiredCount = senders.length - recentSenders.length;
+
+    if (recentSenders.length === 0) {
+      // All senders are expired, remove the entire entry
+      incomingMessageCache.delete(messageBody);
+      removedEntries++;
+      removedMessages += expiredCount;
+    } else if (expiredCount > 0) {
+      // Some senders expired, update the entry
+      incomingMessageCache.set(messageBody, recentSenders);
+      removedMessages += expiredCount;
+    }
+  }
+
+  if (removedMessages > 0 || removedEntries > 0) {
+    console.log(`🧹 Cache cleanup: Removed ${removedMessages} expired messages, ${removedEntries} entries deleted`);
+    console.log(`   Cache now has ${incomingMessageCache.size} unique message texts`);
+  }
+}
+
+// Run cleanup every hour
+setInterval(cleanupMessageCache, 60 * 60 * 1000);
 
 // Function to get and cache recent chats
 async function getRecentContacts(client, userPhone) {

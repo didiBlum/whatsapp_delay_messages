@@ -131,8 +131,11 @@ function formatIsraelTime(date) {
 }
 
 function parseSendCommand(text) {
-  // Parse /send [name] in [time] [message]
-  // Example: /send John in 2 hours Hey there!
+  // Parse /send [name] in/at [time] [message]
+  // Examples:
+  //   /send John in 2 hours Hey there!
+  //   /send John at 8:30 Hey there!
+  //   /send John at 8 Good morning!
 
   // Remove /send prefix
   let content = text.replace(/^\/send\s+/i, '').trim();
@@ -141,22 +144,35 @@ function parseSendCommand(text) {
     return null;
   }
 
-  // Try to find "in" keyword which separates name from time
-  const inIndex = content.toLowerCase().indexOf(' in ');
+  // Try to find " in " or " at " keyword which separates name from time
+  let separatorIndex = -1;
+  let separatorLength = 0;
 
-  if (inIndex === -1) {
-    return null; // No "in" found
+  const inIndex = content.toLowerCase().indexOf(' in ');
+  const atIndex = content.toLowerCase().indexOf(' at ');
+
+  // Find which separator comes first (and exists)
+  if (inIndex !== -1 && (atIndex === -1 || inIndex < atIndex)) {
+    separatorIndex = inIndex;
+    separatorLength = 4; // length of " in "
+  } else if (atIndex !== -1) {
+    separatorIndex = atIndex;
+    separatorLength = 4; // length of " at "
   }
 
-  // Extract recipient name (everything before " in ")
-  const recipientName = content.substring(0, inIndex).trim();
+  if (separatorIndex === -1) {
+    return null; // No separator found
+  }
+
+  // Extract recipient name (everything before " in " or " at ")
+  const recipientName = content.substring(0, separatorIndex).trim();
 
   if (!recipientName) {
     return null;
   }
 
-  // Extract time and message part (everything after " in ")
-  const timeAndMessage = content.substring(inIndex + 4).trim(); // +4 to skip " in "
+  // Extract time and message part (everything after " in " or " at ")
+  const timeAndMessage = content.substring(separatorIndex + separatorLength).trim();
 
   // Parse the time using chrono
   const parsed = chrono.parse(timeAndMessage, new Date(), { forwardDate: true });
