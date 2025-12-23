@@ -759,7 +759,7 @@ async function handleIncomingMessage(message) {
           } else {
             console.log('❌ ERROR: Could not find contact with name:', parsed.recipient);
             console.log('💡 Try using the phone number instead');
-            console.log('   Example: /reply to 972507162404 in 1 minute test');
+            console.log('   Example: /reply to 972501234567 in 1 minute test');
             return;
           }
         } catch (err) {
