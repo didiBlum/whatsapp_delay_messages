@@ -12,12 +12,10 @@ document.addEventListener('DOMContentLoaded', () => {
   checkConnection();
   checkQRCode(); // Always check for QR code on load
   loadMessages();
-  loadStats();
 
   // Set up refresh button
   document.getElementById('refresh-btn').addEventListener('click', () => {
     loadMessages();
-    loadStats();
   });
 
   // Set up disconnect button (will be shown when connected)
@@ -30,7 +28,6 @@ document.addEventListener('DOMContentLoaded', () => {
   refreshInterval = setInterval(() => {
     checkConnection();
     loadMessages();
-    loadStats();
   }, 30000);
 });
 
@@ -178,21 +175,6 @@ async function handleDisconnect() {
     alert('Error disconnecting: ' + error.message + '\n\nPlease check the browser console for more details.');
     disconnectBtn.disabled = false;
     disconnectBtn.textContent = '🔌 Disconnect & Generate New QR';
-  }
-}
-
-// Load statistics
-async function loadStats() {
-  try {
-    const response = await fetch(`${API_URL}/api/stats`);
-    const data = await response.json();
-
-    document.getElementById('stat-total').textContent = data.total || 0;
-    document.getElementById('stat-pending').textContent = data.pending || 0;
-    document.getElementById('stat-sent').textContent = data.sent || 0;
-    document.getElementById('stat-failed').textContent = data.failed || 0;
-  } catch (error) {
-    console.error('Error loading stats:', error);
   }
 }
 
