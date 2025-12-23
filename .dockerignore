@@ -1,0 +1,13 @@
+node_modules
+npm-debug.log
+.env
+*.db
+whatsapp-session
+.wwebjs_auth
+.wwebjs_cache
+.git
+.gitignore
+.DS_Store
+*.log
+.claude
+what_to_do
