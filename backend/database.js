@@ -115,6 +115,24 @@ function getAllScheduledMessages() {
   });
 }
 
+// Get all pending messages (regardless of scheduled time) for the /show command
+function getAllPendingMessages() {
+  return new Promise((resolve, reject) => {
+    db.all(
+      `SELECT * FROM scheduled_messages
+       WHERE status = 'pending'
+       ORDER BY scheduled_time ASC`,
+      (err, rows) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(rows);
+        }
+      }
+    );
+  });
+}
+
 // Get pending count
 function getPendingCount() {
   return new Promise((resolve, reject) => {
@@ -135,6 +153,7 @@ module.exports = {
   initDatabase,
   saveScheduledMessage,
   getPendingMessages,
+  getAllPendingMessages,
   updateMessageStatus,
   getAllScheduledMessages,
   getPendingCount,

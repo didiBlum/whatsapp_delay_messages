@@ -111,9 +111,6 @@ function parseTimeCommand(text) {
 }
 
 function formatIsraelTime(date) {
-  const offset = getIsraelTimezoneOffset(date);
-  const hours = Math.floor(offset / 60);
-
   const options = {
     year: 'numeric',
     month: 'short',
@@ -121,13 +118,14 @@ function formatIsraelTime(date) {
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
-    timeZone: 'UTC'
+    timeZone: 'Asia/Jerusalem'
   };
 
-  // Adjust date to Israel timezone
-  const israelDate = new Date(date.getTime() - (date.getTimezoneOffset() + hours * 60) * 60 * 1000);
+  // Determine if DST is in effect for display
+  const offset = getIsraelTimezoneOffset(date);
+  const hours = Math.floor(offset / 60);
 
-  return israelDate.toLocaleString('en-US', options) + ` (Israel Time, UTC+${hours})`;
+  return date.toLocaleString('en-US', options) + ` (Israel Time, UTC+${hours})`;
 }
 
 function parseSendCommand(text) {

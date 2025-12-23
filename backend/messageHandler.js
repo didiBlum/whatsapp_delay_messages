@@ -583,7 +583,7 @@ async function handleIncomingMessage(message) {
 
         // Schedule the message
         try {
-          await saveScheduledMessage(
+          const messageId = await saveScheduledMessage(
             selectedContact.id,
             selectedContact.name,
             sendContext.message,
@@ -594,7 +594,8 @@ async function handleIncomingMessage(message) {
             `✅ Message scheduled!\n\n` +
             `📧 To: *${selectedContact.name}*\n` +
             `💬 Message: "${sendContext.message}"\n` +
-            `⏰ Time: ${formatIsraelTime(sendContext.scheduledTime)}`
+            `⏰ Time: ${formatIsraelTime(sendContext.scheduledTime)}\n` +
+            `🆔 ID: ${messageId}`
           );
 
           console.log('✅ Message scheduled successfully via /send selection');
@@ -643,7 +644,7 @@ async function handleIncomingMessage(message) {
         console.log('✅ Found exact match:', contact.name);
 
         try {
-          await saveScheduledMessage(
+          const messageId = await saveScheduledMessage(
             contact.id,
             contact.name,
             parsed.message,
@@ -654,7 +655,8 @@ async function handleIncomingMessage(message) {
             `✅ Message scheduled!\n\n` +
             `📧 To: *${contact.name}*\n` +
             `💬 Message: "${parsed.message}"\n` +
-            `⏰ Time: ${formatIsraelTime(parsed.scheduledTime)}`
+            `⏰ Time: ${formatIsraelTime(parsed.scheduledTime)}\n` +
+            `🆔 ID: ${messageId}`
           );
 
           console.log('✅ Message scheduled successfully via /send');
@@ -716,8 +718,8 @@ async function handleIncomingMessage(message) {
       console.log('Processing /show command');
 
       try {
-        const { getPendingMessages } = require('./database');
-        const messages = await getPendingMessages();
+        const { getAllPendingMessages } = require('./database');
+        const messages = await getAllPendingMessages();
 
         if (messages.length === 0) {
           await sendMessageToSelf('📭 *No scheduled messages*\n\nYou have no pending messages to send.');
