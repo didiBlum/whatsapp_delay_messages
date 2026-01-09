@@ -34,8 +34,6 @@ function cacheIncomingMessage(messageBody, senderId, senderName, chatName, times
 
   incomingMessageCache.set(messageBody, existing);
 
-  console.log(`💾 Cached message from ${senderName} (${senderId})`);
-  console.log(`   Cache now has ${incomingMessageCache.size} unique message texts`);
 }
 
 // Search cache for matching messages
@@ -51,11 +49,6 @@ function searchCachedMessages(messageBody) {
   const cutoff = now - MESSAGE_CACHE_DURATION;
   const recentMatches = matches.filter(m => m.timestamp > cutoff);
 
-  if (recentMatches.length < matches.length) {
-    console.log(`🗑️  Filtered out ${matches.length - recentMatches.length} expired cache entries`);
-  }
-
-  console.log(`🔍 Found ${recentMatches.length} recent cached sender(s) for this message`);
   return recentMatches;
 }
 
@@ -83,10 +76,6 @@ function cleanupMessageCache() {
     }
   }
 
-  if (removedMessages > 0 || removedEntries > 0) {
-    console.log(`🧹 Cache cleanup: Removed ${removedMessages} expired messages, ${removedEntries} entries deleted`);
-    console.log(`   Cache now has ${incomingMessageCache.size} unique message texts`);
-  }
 }
 
 // Run cleanup every hour
@@ -99,11 +88,8 @@ async function getRecentContacts(client, userPhone) {
   // Check cache (valid for 5 minutes)
   const cached = recentContactsCache.get(cacheKey);
   if (cached && (Date.now() - cached.timestamp < 5 * 60 * 1000)) {
-    console.log('📋 Using cached contact list');
     return cached.contacts;
   }
-
-  console.log('📋 Fetching recent chats...');
   try {
     const chats = await client.getChats();
 
@@ -133,32 +119,24 @@ async function getRecentContacts(client, userPhone) {
           timestamp: chat.timestamp
         });
       } catch (err) {
-        console.log('Could not get contact for chat:', chat.id._serialized);
+        // Ignore contact fetch errors
       }
     }
 
-    // Cache the results
     recentContactsCache.set(cacheKey, {
       contacts,
       timestamp: Date.now()
     });
 
-    console.log(`📋 Found ${contacts.length} recent contacts`);
     return contacts;
   } catch (err) {
-    console.error('Error getting recent chats:', err);
+    console.error('Error getting contacts:', err.message);
     return [];
   }
 }
 
-// Get dedicated group ID from environment variable (optional)
-// If set, only messages from this group will be processed
-// Format: "120363026329878728@g.us" or just the group ID
 const DEDICATED_GROUP_ID = process.env.DEDICATED_GROUP_ID || null;
-
-// Track when the server started - only process messages after this time
 const SERVER_START_TIME = Date.now();
-console.log('Server start time recorded:', new Date(SERVER_START_TIME).toISOString());
 
 // Track processed message IDs to prevent duplicates
 const processedMessageIds = new Set();
@@ -176,293 +154,131 @@ async function getMessageBody(message) {
       const body = await message.getBody();
       if (body) return body;
     } catch (err) {
-      console.log('getBody() failed:', err.message);
+      // Ignore
     }
   }
-  
-  // Try _data.body
+
   if (message._data && message._data.body) {
     return message._data.body;
   }
-  
-  // Try rawData
+
   if (message.rawData && message.rawData.body) {
     return message.rawData.body;
   }
-  
-  // Log what we have for debugging
-  console.log('Message object keys:', Object.keys(message));
-  console.log('Message type:', message.type);
-  console.log('Message hasBody:', message.hasBody);
-  
+
   return null;
 }
 
 async function handleIncomingMessage(message) {
-  const handlerStartTime = Date.now();
-  console.log('\n========================================');
-  console.log('📨 INCOMING MESSAGE EVENT TRIGGERED');
-  console.log('========================================');
-  console.log('Handler started at:', new Date(handlerStartTime).toISOString());
-  
   // Get message ID for duplicate detection
   const messageId = message.id && message.id._serialized ? message.id._serialized : null;
 
-  // Check if we've already processed this exact message
+  // Skip duplicates
   if (messageId && processedMessageIds.has(messageId)) {
-    console.log('⏭️  Skipping DUPLICATE message (ID already processed)');
-    console.log('   Message ID:', messageId);
     return;
   }
 
-  // Check if this is an old message (from before the server started)
+  // Skip old messages (from before server started)
   const messageTimestamp = message.timestamp ? message.timestamp * 1000 : null;
-
-  if (messageTimestamp) {
-    const messageDate = new Date(messageTimestamp);
-    const serverStartDate = new Date(SERVER_START_TIME);
-    const now = Date.now();
-    const ageSeconds = Math.floor((now - messageTimestamp) / 1000);
-
-    // Check if message is older than server start time
-    if (messageTimestamp < SERVER_START_TIME) {
-      const ageMinutes = Math.floor(ageSeconds / 60);
-      console.log('⏭️  Skipping OLD message (from before server started)');
-      console.log('   Message time:', messageDate.toISOString());
-      console.log('   Server started:', serverStartDate.toISOString());
-      console.log('   Age:', ageMinutes > 0 ? `${ageMinutes} minutes` : `${ageSeconds} seconds`);
-      return;
-    }
-
-    console.log('✅ NEW message detected');
-    console.log('   Message time:', messageDate.toISOString());
-    console.log('   Server started:', serverStartDate.toISOString());
-    console.log('   Current time:', new Date(now).toISOString());
-    console.log('   Message is', Math.floor((messageTimestamp - SERVER_START_TIME) / 1000), 'seconds after server start');
-    console.log('   Message is', Math.floor((now - messageTimestamp) / 1000), 'seconds old');
-  } else {
-    console.log('⚠️  Message with no timestamp - processing anyway (might be new, might be old)');
-    console.log('   This could be a system message or message from before timestamp tracking');
+  if (messageTimestamp && messageTimestamp < SERVER_START_TIME) {
+    return;
   }
 
-  // Mark this message as processed
+  // Mark as processed
   if (messageId) {
     processedMessageIds.add(messageId);
-    console.log('✅ Message ID added to processed set:', messageId);
   }
-  console.log('Raw message.from:', message.from);
-  console.log('Raw message.type:', message.type);
-  console.log('Raw message.hasMedia:', message.hasMedia);
-  console.log('Raw message.author:', message.author);
-  console.log('Raw message.timestamp:', messageTimestamp ? new Date(messageTimestamp).toISOString() : 'no timestamp');
-  
+
   try {
-    // Filter out status updates early - check before getting chat
-    // Status updates can come from 'status@broadcast' or have specific types
-    if (message.from === 'status@broadcast' || 
+    // Filter out status updates and system messages
+    if (message.from === 'status@broadcast' ||
         (message.from && typeof message.from === 'string' && message.from.includes('status'))) {
-      console.log('⏭️  Skipping: Status update (from:', message.from, ')');
       return;
     }
-    
+
     if (message.type === 'e2e_notification' ||
-        (message.hasMedia && message.type === 'image' && message.from && message.from.includes('broadcast'))) {
-      console.log('⏭️  Skipping: Broadcast/notification message');
-      return;
-    }
-    
-    // Filter out group notifications, protocol messages, and template messages
-    // Common message types in WhatsApp Web.js:
-    // - 'chat' - regular text message
-    // - 'image', 'video', 'audio', 'document', 'sticker' - media messages
-    // - 'location', 'vcard', 'ptt' (voice note) - special types
-    // - 'notification_template' - system notification templates
-    // - 'notification' - system notifications
-    // - 'protocol' - protocol messages
-    // - 'gp2' - group protocol messages
-    // - 'e2e_notification' - end-to-end encryption notifications
-    if (message.type === 'gp2' || 
-        message.type === 'notification' || 
+        message.type === 'gp2' ||
+        message.type === 'notification' ||
         message.type === 'protocol' ||
         message.type === 'notification_template' ||
-        message.type === 'e2e_notification') {
-      console.log('⏭️  Skipping: System message (type:', message.type, ')');
-      console.log('   Common system types: notification_template, notification, protocol, gp2, e2e_notification');
+        (message.hasMedia && message.type === 'image' && message.from && message.from.includes('broadcast'))) {
       return;
     }
-    
-    // Log all message types we see for debugging
-    console.log('📋 Message type:', message.type);
-    if (message.type === 'chat' || message.type === 'image' || message.type === 'video' || 
-        message.type === 'audio' || message.type === 'document' || message.type === 'sticker') {
-      console.log('   ✅ This is a CHAT message type - should be processed!');
-    } else {
-      console.log('   ⚠️  Unusual message type - might still be processable');
-    }
-    console.log('   Common chat types: chat, image, video, audio, document, sticker, location, vcard, ptt');
-    
-    console.log('✅ Message passed initial filters, processing...');
-    
-    // Now get chat info for actual messages
-    console.log('Getting chat info...');
+
+    // Get chat info
     const chat = await message.getChat();
     const chatId = chat.id._serialized;
-    
-    console.log('Chat retrieved:');
-    console.log('  From:', message.from);
-    console.log('  Message type:', message.type);
-    console.log('  Has media:', message.hasMedia);
-    console.log('  Is forwarded:', message.isForwarded);
-    console.log('  Chat type:', chat.isGroup ? 'Group' : 'Individual');
-    console.log('  Chat ID:', chatId);
-    
-    // Log chat ID for easy setup - this helps user find their group ID
+
+    // Log chat ID for easy setup - helps user find their group ID
     if (chat.isGroup && !DEDICATED_GROUP_ID) {
-      console.log('💡 TIP: To use this group, set DEDICATED_GROUP_ID=' + chatId + ' in your .env file');
+      console.log('TIP: To use this group, set DEDICATED_GROUP_ID=' + chatId);
     }
-    
-    // Print the entire message object (safely, avoiding circular references)
-    console.log('=== FULL MESSAGE OBJECT ===');
-    try {
-      // Use JSON.stringify with replacer to avoid circular references
-      const messageStr = JSON.stringify(message, (key, value) => {
-        // Skip functions and circular references
-        if (typeof value === 'function') {
-          return '[Function]';
-        }
-        if (typeof value === 'object' && value !== null) {
-          // Limit depth to avoid too much output
-          if (key === 'client' || key === '_client') {
-            return '[Client Object]';
-          }
-          if (key === 'chat' || key === '_chat') {
-            return '[Chat Object]';
-          }
-        }
-        return value;
-      }, 2);
-      console.log(messageStr);
-    } catch (err) {
-      console.log('Could not stringify message object:', err.message);
-      // Fallback: print key properties
-      console.log('Message keys:', Object.keys(message));
-      for (const key of Object.keys(message)) {
-        if (typeof message[key] !== 'function' && key !== 'client' && key !== '_client') {
-          try {
-            console.log(`  ${key}:`, typeof message[key] === 'object' ? '[Object]' : message[key]);
-          } catch (e) {
-            console.log(`  ${key}: [Could not access]`);
-          }
-        }
-      }
-    }
-    console.log('=== END MESSAGE OBJECT ===');
-    
+
     // Get message body using helper function
     const messageBody = await getMessageBody(message);
-    console.log('Body:', messageBody);
 
     if (!messageBody) {
-      console.log('⚠️  No message body found - might be media or system message');
-      console.log('Message keys:', Object.keys(message));
-      console.log('⚠️  Returning early - cannot process message without body');
       return;
     }
 
     // Get user phone number
     const userPhone = getUserPhoneNumber();
-    console.log('User phone:', userPhone);
-    console.log('Dedicated group ID configured:', DEDICATED_GROUP_ID || 'None (using self-chat mode)');
 
-    // Check if it's the user's self-chat (messages forwarded to yourself)
-    // This can be either an individual chat with your own number or a special self-chat format
+    // Check if it's the user's self-chat
     const isSelfChat = (!chat.isGroup && chatId.includes(userPhone)) ||
                        (chatId.includes('@g.us') && message.from === chatId);
-    console.log('Is self-chat (global)?', isSelfChat);
 
     // Check if using dedicated group mode
     if (DEDICATED_GROUP_ID) {
-      // Normalize the group ID (remove @g.us if already present, then add it)
-      const normalizedGroupId = DEDICATED_GROUP_ID.includes('@g.us') 
-        ? DEDICATED_GROUP_ID 
+      const normalizedGroupId = DEDICATED_GROUP_ID.includes('@g.us')
+        ? DEDICATED_GROUP_ID
         : `${DEDICATED_GROUP_ID}@g.us`;
-      
-      // Only process messages from the dedicated group
+
       if (chatId !== normalizedGroupId) {
-        console.log('⏭️  Skipping: Not from dedicated group');
-        console.log('   Expected:', normalizedGroupId);
-        console.log('   Got:', chatId);
         return;
       }
-      
-      // In a group, check if message is from the user
+
       const author = message.author || message.from;
       const isFromUser = author && author.includes(userPhone);
-      
-      console.log('Message author:', author);
-      console.log('Is from user in group?', isFromUser);
-      
+
       if (!isFromUser) {
-        console.log('❌ Ignoring: Not from user in dedicated group');
-        console.log('   Author:', author);
-        console.log('   User phone:', userPhone);
         return;
       }
-      
-      console.log('✅ Message from user in dedicated group');
     } else {
-      // Original logic: check self-chat or individual messages from user
       const author = message.author || message.from;
-
-      // Check if it's the user's self-chat (120363026329878728@g.us format or similar)
-      // OR if the author is the user's phone number
       const isSelfChat = chatId.includes('@g.us') && message.from === chatId;
       const isFromUser = author && author.includes(userPhone);
 
-      console.log('Message author:', author);
-      console.log('Is self-chat?', isSelfChat);
-      console.log('Is from user?', isFromUser);
-
       if (!isSelfChat && !isFromUser) {
-        console.log('📥 Message from someone else - caching for forwarded message detection');
-
-        // Cache this incoming message so we can find it later when the user forwards it
+        // Cache incoming messages for forwarded message detection
         if (messageBody && !message.isForwarded) {
           try {
-            // Get sender name
             let senderName = chatId;
             let senderId = chatId;
-
             try {
               const contactChat = await message.getChat();
               const contact = await contactChat.getContact();
               senderName = contact.name || contact.pushname || contact.number || chatId;
               senderId = contactChat.id._serialized;
             } catch (err) {
-              // If getting contact fails, use chat info
               senderName = chat.name || chatId;
             }
-
-            // Cache the message
             cacheIncomingMessage(messageBody, senderId, senderName, chat.name || chatId, Date.now());
           } catch (err) {
-            console.log('⚠️  Failed to cache message:', err.message);
+            // Ignore cache errors
           }
         }
-
-        console.log('❌ Ignoring: Not from user and not self-chat');
-        return; // Ignore messages from other people (but we cached it first!)
+        return;
       }
-
-      console.log('✅ Message from user');
     }
 
-    console.log('✅ Processing message from user:', messageBody);
+    // Log command being processed
+    if (messageBody.startsWith('/')) {
+      console.log('Command:', messageBody.split(' ')[0]);
+    }
 
     // Check if this is a forwarded message (only process forwarded messages in self-chat)
     if (message.isForwarded && isSelfChat) {
-      console.log('📨 Forwarded message detected in self-chat, searching cache for original sender...');
-      console.log('   Message text:', messageBody.substring(0, 100));
 
       // Search the message cache for who sent this message
       try {
@@ -475,11 +291,7 @@ async function handleIncomingMessage(message) {
           timestamp: cached.timestamp
         }));
 
-        console.log(`🔍 Found ${matches.length} potential sender(s) in cache`);
-
         if (matches.length === 0) {
-          console.log('⚠️  Could not find original sender in recent messages');
-          console.log('   Storing forwarded message for fallback');
           lastForwardedMessage.set(chat.id._serialized, {
             timestamp: message.timestamp,
             from: message.from,
@@ -491,9 +303,7 @@ async function handleIncomingMessage(message) {
           await sendMessageToSelf('⚠️ Could not find who sent this message in your recent chats.\n\nTo schedule a reply:\n1. Send /list to see contacts\n2. Use /reply [number] in [time] message');
           return;
         } else if (matches.length === 1) {
-          // Exactly one match - use it automatically!
           const match = matches[0];
-          console.log('✅ Found original sender:', match.contactName);
 
           lastForwardedMessage.set(chat.id._serialized, {
             timestamp: message.timestamp,
@@ -508,8 +318,6 @@ async function handleIncomingMessage(message) {
           await sendMessageToSelf(`✅ Found original sender: *${match.contactName}*\n\nNow send:\n/reply in [time] [message]\n\nExample: /reply in 2 hours hey there!`);
           return;
         } else {
-          // Multiple matches - ask user to choose using a list
-          console.log('❓ Multiple potential senders found, asking user to choose');
 
           try {
             // Create list items from matches
@@ -575,7 +383,6 @@ async function handleIncomingMessage(message) {
           forwardingScore: message.forwardingScore,
           message: message
         });
-        console.log('Stored forwarded message context from:', message.from);
         return;
       }
     }
@@ -589,17 +396,12 @@ async function handleIncomingMessage(message) {
       const listIdMatch = messageBody.trim().match(/^sender_(\d+)$/);
       if (listIdMatch) {
         selection = parseInt(listIdMatch[1]);
-        console.log('User selected from list, index:', selection);
-      }
-      // Check if it's a plain number
-      else if (/^\d+$/.test(messageBody.trim())) {
+      } else if (/^\d+$/.test(messageBody.trim())) {
         selection = parseInt(messageBody.trim()) - 1;
-        console.log('User selected by number, index:', selection);
       }
 
       if (selection >= 0 && selection < forwardedContext.matchOptions.length) {
         const selectedMatch = forwardedContext.matchOptions[selection];
-        console.log('✅ User selected:', selectedMatch.contactName);
 
         // Update the forwarded context with the selected sender
         lastForwardedMessage.set(chat.id._serialized, {
@@ -675,9 +477,10 @@ async function handleIncomingMessage(message) {
 
     // Check if this is a /send command
     if (messageBody && messageBody.toLowerCase().startsWith('/send')) {
-      console.log('Processing /send command:', messageBody);
+      try {
+        console.log('Processing /send command:', messageBody);
 
-      const parsed = parseSendCommand(messageBody);
+        const parsed = parseSendCommand(messageBody);
 
       if (!parsed) {
         await sendMessageToSelf('❌ Could not parse /send command.\n\nFormat: `/send [name] in [time] [message]`\n\nExample: /send John in 2 hours Hey there!');
@@ -687,7 +490,9 @@ async function handleIncomingMessage(message) {
       console.log('Parsed /send:', parsed);
 
       // Search for contacts matching the name
+      console.log('Fetching contacts...');
       const allContacts = await getRecentContacts(message.client, userPhone);
+      console.log('Got', allContacts.length, 'contacts');
       const searchTerm = parsed.recipientName.toLowerCase();
 
       // Find matching contacts (name or number contains the search term)
@@ -779,40 +584,54 @@ async function handleIncomingMessage(message) {
           return;
         }
       }
+      } catch (err) {
+        console.error('Error in /send command:', err.message);
+        await sendMessageToSelf(`❌ Error processing /send command: ${err.message}`);
+      }
+      return;
+    }
+
+    // Check if this is a /up command (health check)
+    if (messageBody && messageBody.toLowerCase().trim() === '/up') {
+      try {
+        const { getPendingCount } = require('./database');
+        const pendingCount = await getPendingCount();
+        await sendMessageToSelf(`✅ *Bot is running*\n\nPending messages: ${pendingCount}\nCache entries: ${incomingMessageCache.size}`);
+      } catch (err) {
+        await sendMessageToSelf(`⚠️ *Bot is running but DB error*\n\n${err.message}`);
+      }
+      return;
     }
 
     // Check if this is a /list command
     if (messageBody && messageBody.toLowerCase().trim() === '/list') {
-      console.log('Processing /list command');
+      try {
+        const contacts = await getRecentContacts(message.client, userPhone);
 
-      // Get recent contacts
-      const contacts = await getRecentContacts(message.client, userPhone);
+        if (contacts.length === 0) {
+          await sendMessageToSelf('❌ No recent contacts found.');
+          return;
+        }
 
-      if (contacts.length === 0) {
-        await sendMessageToSelf('❌ No recent contacts found.');
-        return;
+        let listMessage = '📋 *Recent Contacts*\n\n';
+        contacts.forEach((contact, index) => {
+          listMessage += `*${index + 1}.* ${contact.name}\n`;
+          listMessage += `   📞 ${contact.number}\n\n`;
+        });
+        listMessage += `💡 *How to use:*\n`;
+        listMessage += `• /reply [number] in [time] [message]\n`;
+        listMessage += `• /send [name] in [time] [message]\n\n`;
+        listMessage += `📝 Example: /reply 1 in 2 hours hey there!`;
+
+        await sendMessageToSelf(listMessage);
+      } catch (err) {
+        console.error('Error in /list:', err.message);
       }
-
-      // Build contacts list message with better formatting
-      let listMessage = '📋 *Recent Contacts*\n\n';
-      contacts.forEach((contact, index) => {
-        listMessage += `*${index + 1}.* ${contact.name}\n`;
-        listMessage += `   📞 ${contact.number}\n\n`;
-      });
-      listMessage += `💡 *How to use:*\n`;
-      listMessage += `• /reply [number] in [time] [message]\n`;
-      listMessage += `• /send [name] in [time] [message]\n\n`;
-      listMessage += `📝 Example: /reply 1 in 2 hours hey there!`;
-
-      await sendMessageToSelf(listMessage);
-      console.log('📤 Sent contacts list to user');
       return;
     }
 
     // Check if this is a /show command
     if (messageBody && messageBody.toLowerCase().trim() === '/show') {
-      console.log('Processing /show command');
-
       try {
         const { getAllPendingMessages } = require('./database');
         const messages = await getAllPendingMessages();
@@ -840,10 +659,9 @@ async function handleIncomingMessage(message) {
         showMessage += `📝 *Example:* /cancel ${messages[0].id}`;
 
         await sendMessageToSelf(showMessage);
-        console.log('📤 Sent scheduled messages list to user');
         return;
       } catch (err) {
-        console.error('❌ Error fetching scheduled messages:', err);
+        console.error('Error in /show:', err.message);
         await sendMessageToSelf('❌ Error fetching scheduled messages. Please try again.');
         return;
       }
@@ -851,8 +669,6 @@ async function handleIncomingMessage(message) {
 
     // Check if this is a /cancel command
     if (messageBody && messageBody.toLowerCase().startsWith('/cancel')) {
-      console.log('Processing /cancel command');
-
       const cancelMatch = messageBody.match(/^\/cancel\s+(\d+)$/i);
       if (!cancelMatch) {
         await sendMessageToSelf('❌ Invalid format.\n\nUsage: `/cancel [id]`\n\nExample: /cancel 5\n\nUse /show to see message IDs.');
@@ -860,29 +676,24 @@ async function handleIncomingMessage(message) {
       }
 
       const messageId = parseInt(cancelMatch[1]);
-      console.log('Cancelling message ID:', messageId);
 
       try {
         const { updateMessageStatus } = require('./database');
         await updateMessageStatus(messageId, 'cancelled', 'Cancelled by user');
 
-        await sendMessageToSelf(`✅ *Message ${messageId} cancelled*\n\nThe scheduled message has been cancelled and will not be sent.\n\nUse /show to see remaining messages.`);
-        console.log('✅ Message cancelled successfully');
+        await sendMessageToSelf(`✅ *Message ${messageId} cancelled*\n\nUse /show to see remaining messages.`);
         return;
       } catch (err) {
-        console.error('❌ Error cancelling message:', err);
-        await sendMessageToSelf(`❌ Error cancelling message ${messageId}. Please make sure the ID is correct.\n\nUse /show to see valid IDs.`);
+        console.error('Error in /cancel:', err.message);
+        await sendMessageToSelf(`❌ Error cancelling message ${messageId}. Please try again.`);
         return;
       }
     }
 
     // Check if this is a /reply command
     if (!messageBody || !messageBody.toLowerCase().startsWith('/reply')) {
-      console.log('ℹ️  Message is not a /send, /reply, /list, /show, or /cancel command, ignoring:', messageBody ? messageBody.substring(0, 50) : '[no body]');
       return;
     }
-
-    console.log('Processing /reply command:', messageBody);
 
     // Parse the time and message
     const parsed = parseTimeCommand(messageBody);
@@ -1122,11 +933,6 @@ async function handleIncomingMessage(message) {
   } catch (error) {
     console.error('❌ ERROR: Failed to handle message:', error);
     console.error('Stack trace:', error.stack);
-  } finally {
-    const handlerEndTime = Date.now();
-    const handlerDuration = handlerEndTime - handlerStartTime;
-    console.log('⏱️  Message handler completed in', handlerDuration, 'ms');
-    console.log('========================================\n');
   }
 }
 

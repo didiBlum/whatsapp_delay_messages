@@ -149,6 +149,23 @@ function getPendingCount() {
   });
 }
 
+// Delete a message from the database
+function deleteMessage(id) {
+  return new Promise((resolve, reject) => {
+    db.run(
+      `DELETE FROM scheduled_messages WHERE id = ?`,
+      [id],
+      function(err) {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(this.changes);
+        }
+      }
+    );
+  });
+}
+
 module.exports = {
   initDatabase,
   saveScheduledMessage,
@@ -157,5 +174,6 @@ module.exports = {
   updateMessageStatus,
   getAllScheduledMessages,
   getPendingCount,
+  deleteMessage,
   db
 };

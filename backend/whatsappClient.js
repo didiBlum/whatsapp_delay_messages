@@ -8,6 +8,7 @@ let qrCodeData = null;
 let isReady = false;
 let isInitializing = false;
 let userPhoneNumber = null;
+let healthCheckInterval = null;
 
 // Event handlers storage
 const eventHandlers = {
@@ -150,94 +151,47 @@ function initializeClient() {
       console.error('   Path:', sessionPath);
     }
     
-    console.log('');
-    console.log('💡 To rename this device in WhatsApp:');
-    console.log('   1. Open WhatsApp on your phone');
-    console.log('   2. Go to Settings > Linked Devices');
-    console.log('   3. Tap on this device');
-    console.log('   4. Tap "Rename" and enter a custom name (e.g., "My Server")');
-    console.log('');
+    // Start health check
+    if (healthCheckInterval) {
+      clearInterval(healthCheckInterval);
+    }
+    healthCheckInterval = setInterval(async () => {
+      try {
+        const state = await client.getState();
+        if (state !== 'CONNECTED') {
+          console.log('Health check: Client state is', state, '- may have connection issues');
+        }
+      } catch (err) {
+        console.error('Health check failed:', err.message);
+        console.log('Client may be disconnected, attempting to get state failed');
+      }
+    }, 60000); // Check every minute
 
     if (eventHandlers.onReady) {
       eventHandlers.onReady();
     }
   });
 
-  // Message event - DISABLED to avoid duplicate processing with message_create
-  // We only use message_create which fires specifically for NEW messages
-  /*
+  // Message event - backup listener (handler has duplicate detection)
   client.on('message', async (message) => {
-    const eventTime = Date.now();
-    const messageTime = message.timestamp ? new Date(message.timestamp * 1000) : null;
-    const timeSinceMessage = messageTime ? Math.floor((eventTime - message.timestamp * 1000) / 1000) : 'unknown';
-    
-    console.log('\n🔔🔔🔔 MESSAGE EVENT FIRED IN CLIENT 🔔🔔🔔');
-    console.log('Event received at:', new Date(eventTime).toISOString());
-    console.log('Message ID:', message.id ? message.id._serialized : 'no ID');
-    console.log('Message from:', message.from);
-    console.log('Message author:', message.author);
-    console.log('Message type:', message.type);
-    // Log common message types for reference:
-    // chat, image, video, audio, document, sticker, location, vcard, ptt (voice),
-    // notification_template, notification, protocol, gp2, e2e_notification
-    console.log('Message timestamp:', messageTime ? messageTime.toISOString() : 'no timestamp');
-    console.log('Time since message:', timeSinceMessage, typeof timeSinceMessage === 'number' ? 'seconds' : '');
-    console.log('Message body (direct):', message.body ? message.body.substring(0, 50) : 'no body');
-    
-    // Log if this looks like a new message (received within last 10 seconds)
-    if (typeof timeSinceMessage === 'number' && timeSinceMessage < 10) {
-      const messageBody = message.body || message._data?.body || 'no body';
-      const sender = message.from || message.author || 'unknown';
-      console.log('🆕 This looks like a NEW message (received', timeSinceMessage, 'seconds ago)');
-      console.log('   Type:', message.type);
-      console.log('   Sender:', sender);
-      console.log('   Body:', messageBody.substring(0, 100) + (messageBody.length > 100 ? '...' : ''));
-      
-      // Highlight if it's a chat message
-      if (message.type === 'chat' || message.type === 'image' || message.type === 'video' || 
-          message.type === 'audio' || message.type === 'document') {
-        console.log('   ✅✅✅ THIS IS A CHAT MESSAGE - SHOULD BE PROCESSED! ✅✅✅');
-      }
-    } else if (typeof timeSinceMessage === 'number' && timeSinceMessage >= 10) {
-      console.log('📜 This looks like an OLD message (received', timeSinceMessage, 'seconds ago)');
-      console.log('   Type:', message.type);
-      if (message.type === 'chat' || message.type === 'image' || message.type === 'video') {
-        console.log('   ⚠️  This is a CHAT message but it\'s old - will be filtered out');
-      }
-    }
-    
+    console.log('MSG event:', message.from, message.body?.substring(0, 30) || '[no body]');
     if (eventHandlers.onMessage) {
-      console.log('✅ Message handler registered, calling it...');
       try {
         await eventHandlers.onMessage(message);
-        console.log('✅ Message handler completed');
       } catch (error) {
-        console.error('❌ Error in message handler:', error);
-        console.error('Stack:', error.stack);
+        console.error('Error in message handler:', error.message);
       }
-    } else {
-      console.log('⚠️  No message handler registered - messages will not be processed!');
     }
   });
-  */
 
-  // Message Create event - specifically for NEW messages only
+  // Message Create event - primary listener for new messages
   client.on('message_create', async (message) => {
-    console.log('\n📩📩📩 MESSAGE_CREATE EVENT FIRED 📩📩📩');
-    console.log('This event ONLY fires for brand new messages, not old ones');
-    console.log('Message from:', message.from);
-    console.log('Message type:', message.type);
-    console.log('Message body:', message.body ? message.body.substring(0, 100) : 'no body');
-    console.log('Is fromMe:', message.fromMe);
-
-    // Also call the message handler for message_create events
+    console.log('MSG_CREATE event:', message.from, message.body?.substring(0, 30) || '[no body]');
     if (eventHandlers.onMessage) {
-      console.log('✅ Calling message handler for message_create event...');
       try {
         await eventHandlers.onMessage(message);
-        console.log('✅ Message handler completed for message_create');
       } catch (error) {
-        console.error('❌ Error in message handler (message_create):', error);
+        console.error('Error in message_create handler:', error.message);
       }
     }
   });
@@ -395,10 +349,15 @@ async function sendMessageToSelf(message) {
     throw new Error('WhatsApp client is not ready');
   }
 
+  if (!userPhoneNumber) {
+    throw new Error('User phone number not set - client may not be fully initialized');
+  }
+
   try {
     const chatId = `${userPhoneNumber}@c.us`;
+    console.log('Sending message to self:', chatId);
     await client.sendMessage(chatId, message);
-    console.log('Message sent to self');
+    console.log('Message sent to self successfully');
     return true;
   } catch (error) {
     console.error('Error sending message to self:', error);
