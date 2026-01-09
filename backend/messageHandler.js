@@ -14,7 +14,7 @@ const pendingSendContext = new Map(); // Map of chatId -> { matches, scheduledTi
 // Cache all incoming messages for a day to quickly find original senders when forwarding
 // Structure: Map of message body -> array of { senderId, senderName, chatName, timestamp }
 const incomingMessageCache = new Map();
-const MESSAGE_CACHE_DURATION = 24 * 60 * 60 * 1000; // 1 day in milliseconds
+const MESSAGE_CACHE_DURATION = 3 * 60 * 60 * 1000; // 3 hours in milliseconds
 
 // Store incoming message in cache
 function cacheIncomingMessage(messageBody, senderId, senderName, chatName, timestamp) {
@@ -374,6 +374,12 @@ async function handleIncomingMessage(message) {
     console.log('User phone:', userPhone);
     console.log('Dedicated group ID configured:', DEDICATED_GROUP_ID || 'None (using self-chat mode)');
 
+    // Check if it's the user's self-chat (messages forwarded to yourself)
+    // This can be either an individual chat with your own number or a special self-chat format
+    const isSelfChat = (!chat.isGroup && chatId.includes(userPhone)) ||
+                       (chatId.includes('@g.us') && message.from === chatId);
+    console.log('Is self-chat (global)?', isSelfChat);
+
     // Check if using dedicated group mode
     if (DEDICATED_GROUP_ID) {
       // Normalize the group ID (remove @g.us if already present, then add it)
@@ -453,9 +459,9 @@ async function handleIncomingMessage(message) {
 
     console.log('✅ Processing message from user:', messageBody);
 
-    // Check if this is a forwarded message
-    if (message.isForwarded) {
-      console.log('📨 Forwarded message detected, searching cache for original sender...');
+    // Check if this is a forwarded message (only process forwarded messages in self-chat)
+    if (message.isForwarded && isSelfChat) {
+      console.log('📨 Forwarded message detected in self-chat, searching cache for original sender...');
       console.log('   Message text:', messageBody.substring(0, 100));
 
       // Search the message cache for who sent this message
