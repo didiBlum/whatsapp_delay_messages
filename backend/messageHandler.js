@@ -931,8 +931,16 @@ async function handleIncomingMessage(message) {
     }
 
   } catch (error) {
-    console.error('❌ ERROR: Failed to handle message:', error);
-    console.error('Stack trace:', error.stack);
+    // Don't crash on errors - just log them
+    if (error.message && (
+      error.message.includes('Session closed') ||
+      error.message.includes('Target closed') ||
+      error.message.includes('Protocol error')
+    )) {
+      console.log('⚠️ Client disconnected during message handling, will reconnect automatically');
+    } else {
+      console.error('❌ ERROR: Failed to handle message:', error.message || error);
+    }
   }
 }
 

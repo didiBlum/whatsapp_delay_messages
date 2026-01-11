@@ -15,6 +15,22 @@ const {
 const { handleIncomingMessage } = require('./messageHandler');
 const { startScheduler } = require('./scheduler');
 
+// Global error handlers to prevent server crashes
+process.on('uncaughtException', (error) => {
+  console.error('⚠️ Uncaught Exception:', error.message);
+  // Don't exit - try to keep running
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  const message = reason instanceof Error ? reason.message : String(reason);
+  // Only log non-disconnection errors to reduce noise
+  if (!message.includes('Session closed') &&
+      !message.includes('Target closed') &&
+      !message.includes('Protocol error')) {
+    console.error('⚠️ Unhandled Rejection:', message);
+  }
+});
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -182,8 +198,13 @@ onDisconnected((reason) => {
   // Client will be reinitialized automatically
 });
 
-onMessage((message) => {
-  handleIncomingMessage(message);
+onMessage(async (message) => {
+  try {
+    await handleIncomingMessage(message);
+  } catch (err) {
+    // Don't crash on message handling errors
+    console.error('Message handler error:', err.message);
+  }
 });
 
 initializeClient();

@@ -9,6 +9,10 @@ let isReady = false;
 let isInitializing = false;
 let userPhoneNumber = null;
 let healthCheckInterval = null;
+let reconnectAttempts = 0;
+let isReconnecting = false;
+const MAX_RECONNECT_ATTEMPTS = 5;
+const RECONNECT_DELAY = 5000; // 5 seconds
 
 // Event handlers storage
 const eventHandlers = {
@@ -37,6 +41,79 @@ function clearSession() {
     return false;
   }
   return false;
+}
+
+// Function to check if client is actually connected (not just ready flag)
+async function isClientConnected() {
+  if (!client || !isReady) {
+    return false;
+  }
+  try {
+    const state = await client.getState();
+    return state === 'CONNECTED';
+  } catch (err) {
+    return false;
+  }
+}
+
+// Function to handle reconnection
+async function reconnect() {
+  if (isReconnecting || isInitializing) {
+    console.log('Already reconnecting or initializing, skipping...');
+    return;
+  }
+
+  if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+    console.error(`❌ Max reconnection attempts (${MAX_RECONNECT_ATTEMPTS}) reached. Manual restart required.`);
+    return;
+  }
+
+  isReconnecting = true;
+  reconnectAttempts++;
+  console.log(`🔄 Attempting to reconnect (attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`);
+
+  try {
+    // Clean up existing client
+    if (client) {
+      try {
+        if (healthCheckInterval) {
+          clearInterval(healthCheckInterval);
+          healthCheckInterval = null;
+        }
+        client.removeAllListeners();
+        await client.destroy().catch(() => {});
+      } catch (err) {
+        // Ignore cleanup errors
+      }
+      client = null;
+    }
+
+    isReady = false;
+    isInitializing = false;
+    qrCodeData = null;
+
+    // Wait before reconnecting
+    await new Promise(resolve => setTimeout(resolve, RECONNECT_DELAY));
+
+    // Reinitialize
+    initializeClient();
+    console.log('✅ Reconnection initiated');
+  } catch (err) {
+    console.error('❌ Reconnection error:', err.message);
+  } finally {
+    isReconnecting = false;
+  }
+}
+
+// Check if an error indicates a disconnected session
+function isDisconnectedError(error) {
+  if (!error) return false;
+  const message = error.message || String(error);
+  return message.includes('Session closed') ||
+         message.includes('Target closed') ||
+         message.includes('Protocol error') ||
+         message.includes('page has been closed') ||
+         message.includes('not ready');
 }
 
 function initializeClient() {
@@ -151,19 +228,36 @@ function initializeClient() {
       console.error('   Path:', sessionPath);
     }
     
+    // Reset reconnect attempts on successful connection
+    reconnectAttempts = 0;
+
     // Start health check
     if (healthCheckInterval) {
       clearInterval(healthCheckInterval);
     }
+    let consecutiveFailures = 0;
     healthCheckInterval = setInterval(async () => {
       try {
         const state = await client.getState();
-        if (state !== 'CONNECTED') {
+        if (state === 'CONNECTED') {
+          consecutiveFailures = 0; // Reset on success
+        } else {
           console.log('Health check: Client state is', state, '- may have connection issues');
+          consecutiveFailures++;
         }
       } catch (err) {
-        console.error('Health check failed:', err.message);
-        console.log('Client may be disconnected, attempting to get state failed');
+        consecutiveFailures++;
+        // Only log every 3rd failure to reduce noise
+        if (consecutiveFailures % 3 === 1) {
+          console.error('Health check failed:', err.message);
+        }
+
+        // Trigger reconnection after 3 consecutive failures
+        if (consecutiveFailures >= 3) {
+          console.log('🔄 Health check detected disconnection, triggering reconnect...');
+          consecutiveFailures = 0;
+          reconnect();
+        }
       }
     }, 60000); // Check every minute
 
@@ -202,11 +296,17 @@ function initializeClient() {
     isReady = false;
     isInitializing = false;
     qrCodeData = null;
-    
+
+    // Clear health check
+    if (healthCheckInterval) {
+      clearInterval(healthCheckInterval);
+      healthCheckInterval = null;
+    }
+
     // Clear the client reference
     const oldClient = client;
     client = null;
-    
+
     // Clean up the old client
     if (oldClient) {
       try {
@@ -218,6 +318,12 @@ function initializeClient() {
 
     if (eventHandlers.onDisconnected) {
       eventHandlers.onDisconnected(reason);
+    }
+
+    // Auto-reconnect unless it was a manual logout
+    if (reason !== 'LOGOUT') {
+      console.log('🔄 Auto-reconnecting after disconnect...');
+      setTimeout(() => reconnect(), RECONNECT_DELAY);
     }
   });
 
@@ -339,40 +445,57 @@ async function sendMessage(chatId, message) {
     console.log(`Message sent to ${chatId}`);
     return true;
   } catch (error) {
-    console.error('Error sending message:', error);
+    console.error('Error sending message:', error.message);
+
+    // Check if this is a disconnection error
+    if (isDisconnectedError(error)) {
+      console.log('🔄 Detected disconnection during sendMessage, triggering reconnect...');
+      isReady = false;
+      reconnect();
+    }
+
     throw error;
   }
 }
 
 async function sendMessageToSelf(message) {
   if (!client || !isReady) {
-    throw new Error('WhatsApp client is not ready');
+    console.log('⚠️ Client not ready, cannot send message to self');
+    return false; // Don't throw - gracefully fail
   }
 
   if (!userPhoneNumber) {
-    throw new Error('User phone number not set - client may not be fully initialized');
+    console.log('⚠️ User phone number not set');
+    return false; // Don't throw - gracefully fail
   }
 
   try {
     const chatId = `${userPhoneNumber}@c.us`;
-    console.log('Sending message to self:', chatId);
     await client.sendMessage(chatId, message);
-    console.log('Message sent to self successfully');
     return true;
   } catch (error) {
-    console.error('Error sending message to self:', error);
-    throw error;
+    console.error('Error sending message to self:', error.message);
+
+    // Check if this is a disconnection error
+    if (isDisconnectedError(error)) {
+      console.log('🔄 Detected disconnection during sendMessageToSelf, triggering reconnect...');
+      isReady = false;
+      reconnect();
+    }
+
+    return false; // Don't throw - gracefully fail
   }
 }
 
 // Send a list message (dropdown style) to self
 async function sendListToSelf(body, buttonText, sections) {
   if (!client || !isReady) {
-    throw new Error('WhatsApp client is not ready');
+    console.log('⚠️ Client not ready, cannot send list to self');
+    return false;
   }
 
   try {
-    const { MessageMedia, Buttons, List } = require('whatsapp-web.js');
+    const { List } = require('whatsapp-web.js');
     const chatId = `${userPhoneNumber}@c.us`;
 
     const list = new List(body, buttonText, sections, body);
@@ -380,16 +503,23 @@ async function sendListToSelf(body, buttonText, sections) {
     console.log('List message sent to self');
     return true;
   } catch (error) {
-    console.error('Error sending list to self:', error);
-    // Fallback to regular message if lists not supported
-    throw error;
+    console.error('Error sending list to self:', error.message);
+
+    if (isDisconnectedError(error)) {
+      console.log('🔄 Detected disconnection during sendListToSelf, triggering reconnect...');
+      isReady = false;
+      reconnect();
+    }
+
+    return false;
   }
 }
 
 // Send a message with buttons to self
 async function sendButtonsToSelf(body, buttons) {
   if (!client || !isReady) {
-    throw new Error('WhatsApp client is not ready');
+    console.log('⚠️ Client not ready, cannot send buttons to self');
+    return false;
   }
 
   try {
@@ -401,8 +531,15 @@ async function sendButtonsToSelf(body, buttons) {
     console.log('Button message sent to self');
     return true;
   } catch (error) {
-    console.error('Error sending buttons to self:', error);
-    throw error;
+    console.error('Error sending buttons to self:', error.message);
+
+    if (isDisconnectedError(error)) {
+      console.log('🔄 Detected disconnection during sendButtonsToSelf, triggering reconnect...');
+      isReady = false;
+      reconnect();
+    }
+
+    return false;
   }
 }
 
@@ -471,6 +608,7 @@ module.exports = {
   getClient,
   getQRCode,
   isClientReady,
+  isClientConnected,
   sendMessage,
   sendMessageToSelf,
   sendListToSelf,
@@ -480,5 +618,6 @@ module.exports = {
   onReady,
   onQR,
   onDisconnected,
-  disconnect
+  disconnect,
+  reconnect
 };
